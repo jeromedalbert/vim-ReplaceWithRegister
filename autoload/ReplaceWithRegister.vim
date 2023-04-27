@@ -127,6 +127,7 @@ function! s:ReplaceWithRegister( type )
   finally
     call setreg('"', l:save_reg, l:save_regmode)
     let &clipboard = l:save_clipboard
+    normal =`]
   endtry
 endfunction
 function! ReplaceWithRegister#Operator( type, ... )
