@@ -58,76 +58,76 @@ function! s:CorrectForRegtype( type, register, regType, pasteText )
     return 0
 endfunction
 function! s:ReplaceWithRegister( type )
-    " With a put in visual mode, the selected text will be replaced with the
-    " contents of the register. This works better than first deleting the
-    " selection into the black-hole register and then doing the insert; as
-    " "d" + "i/a" has issues at the end-of-the line (especially with blockwise
-    " selections, where "v_o" can put the cursor at either end), and the "c"
-    " commands has issues with multiple insertion on blockwise selection and
-    " autoindenting.
-    " With a put in visual mode, the previously selected text is put in the
-    " unnamed register, so we need to save and restore that.
-    let l:save_clipboard = &clipboard
-    set clipboard= " Avoid clobbering the selection and clipboard registers.
-    let l:save_reg = getreg('"')
-    let l:save_regmode = getregtype('"')
+  " With a put in visual mode, the selected text will be replaced with the
+  " contents of the register. This works better than first deleting the
+  " selection into the black-hole register and then doing the insert; as
+  " "d" + "i/a" has issues at the end-of-the line (especially with blockwise
+  " selections, where "v_o" can put the cursor at either end), and the "c"
+  " commands has issues with multiple insertion on blockwise selection and
+  " autoindenting.
+  " With a put in visual mode, the previously selected text is put in the
+  " unnamed register, so we need to save and restore that.
+  let l:save_clipboard = &clipboard
+  set clipboard= " Avoid clobbering the selection and clipboard registers.
+  let l:save_reg = getreg('"')
+  let l:save_regmode = getregtype('"')
 
-    " Note: Must not use ""p; this somehow replaces the selection with itself?!
-    let l:pasteRegister = (s:register ==# '"' ? '' : '"' . s:register)
-    if s:register ==# '='
-	" Cannot evaluate the expression register within a function; unscoped
-	" variables do not refer to the global scope. Therefore, evaluation
-	" happened earlier in the mappings.
-	" To get the expression result into the buffer, we use the unnamed
-	" register; this will be restored, anyway.
-	call setreg('"', g:ReplaceWithRegister#expr)
-	call s:CorrectForRegtype(a:type, '"', getregtype('"'), g:ReplaceWithRegister#expr)
-	" Must not clean up the global temp variable to allow command
-	" repetition.
-	"unlet g:ReplaceWithRegister#expr
-	let l:pasteRegister = ''
+  " Note: Must not use ""p; this somehow replaces the selection with itself?!
+  let l:pasteRegister = (s:register ==# '"' ? '' : '"' . s:register)
+  if s:register ==# '='
+    " Cannot evaluate the expression register within a function; unscoped
+    " variables do not refer to the global scope. Therefore, evaluation
+    " happened earlier in the mappings.
+    " To get the expression result into the buffer, we use the unnamed
+    " register; this will be restored, anyway.
+    call setreg('"', g:ReplaceWithRegister#expr)
+    call s:CorrectForRegtype(a:type, '"', getregtype('"'), g:ReplaceWithRegister#expr)
+    " Must not clean up the global temp variable to allow command
+    " repetition.
+    "unlet g:ReplaceWithRegister#expr
+    let l:pasteRegister = ''
+  endif
+  try
+    if a:type ==# 'visual'
+      "****D echomsg '**** visual' string(getpos("'<")) string(getpos("'>")) string(l:pasteRegister)
+      let l:previousLineNum = line("'>") - line("'<") + 1
+      if &selection ==# 'exclusive' && getpos("'<") == getpos("'>")
+        " In case of an empty selection, just paste before the cursor
+        " position; reestablishing the empty selection would override
+        " the current character, a peculiarity of how selections work.
+        execute 'silent normal!' l:pasteRegister . 'P'
+      else
+        execute 'silent normal! gv' . l:pasteRegister . 'p'
+      endif
+    else
+      "****D echomsg '**** operator' string(getpos("'[")) string(getpos("']")) string(l:pasteRegister)
+      let l:previousLineNum = line("']") - line("'[") + 1
+      if s:IsAfter(getpos("'["), getpos("']"))
+        execute 'silent normal!' l:pasteRegister . 'P'
+      else
+        " Note: Need to use an "inclusive" selection to make `] include
+        " the last moved-over character.
+        let l:save_visualarea = [getpos("'<"), getpos("'>"), visualmode()]
+        let l:save_selection = &selection
+        set selection=inclusive
+        try
+          execute 'silent normal! g`[' . (a:type ==# 'line' ? 'V' : 'v') . 'g`]' . l:pasteRegister . 'p'
+        finally
+          let &selection = l:save_selection
+          silent! call call('ingo#selection#Set', l:save_visualarea)
+        endtry
+      endif
     endif
-    try
-	if a:type ==# 'visual'
-"****D echomsg '**** visual' string(getpos("'<")) string(getpos("'>")) string(l:pasteRegister)
-	    let l:previousLineNum = line("'>") - line("'<") + 1
-	    if &selection ==# 'exclusive' && getpos("'<") == getpos("'>")
-		" In case of an empty selection, just paste before the cursor
-		" position; reestablishing the empty selection would override
-		" the current character, a peculiarity of how selections work.
-		execute 'silent normal!' l:pasteRegister . 'P'
-	    else
-		execute 'silent normal! gv' . l:pasteRegister . 'p'
-	    endif
-	else
-"****D echomsg '**** operator' string(getpos("'[")) string(getpos("']")) string(l:pasteRegister)
-	    let l:previousLineNum = line("']") - line("'[") + 1
-	    if s:IsAfter(getpos("'["), getpos("']"))
-		execute 'silent normal!' l:pasteRegister . 'P'
-	    else
-		" Note: Need to use an "inclusive" selection to make `] include
-		" the last moved-over character.
-		let l:save_visualarea = [getpos("'<"), getpos("'>"), visualmode()]
-		let l:save_selection = &selection
-		set selection=inclusive
-		try
-		    execute 'silent normal! g`[' . (a:type ==# 'line' ? 'V' : 'v') . 'g`]' . l:pasteRegister . 'p'
-		finally
-		    let &selection = l:save_selection
-		    silent! call call('ingo#selection#Set', l:save_visualarea)
-		endtry
-	    endif
-	endif
 
-	let l:newLineNum = line("']") - line("'[") + 1
-	if l:previousLineNum >= &report || l:newLineNum >= &report
-	    echomsg printf('Replaced %d line%s', l:previousLineNum, (l:previousLineNum == 1 ? '' : 's')) .
-	    \   (l:previousLineNum == l:newLineNum ? '' : printf(' with %d line%s', l:newLineNum, (l:newLineNum == 1 ? '' : 's')))
-	endif
-    finally
-	call setreg('"', l:save_reg, l:save_regmode)
-	let &clipboard = l:save_clipboard
-    endtry
+    let l:newLineNum = line("']") - line("'[") + 1
+    if l:previousLineNum >= &report || l:newLineNum >= &report
+      echomsg printf('Replaced %d line%s', l:previousLineNum, (l:previousLineNum == 1 ? '' : 's')) .
+        \   (l:previousLineNum == l:newLineNum ? '' : printf(' with %d line%s', l:newLineNum, (l:newLineNum == 1 ? '' : 's')))
+    endif
+  finally
+    call setreg('"', l:save_reg, l:save_regmode)
+    let &clipboard = l:save_clipboard
+  endtry
 endfunction
 function! ReplaceWithRegister#Operator( type, ... )
     let l:pasteText = getreg(s:register, 1) " Expression evaluation inside function context may cause errors, therefore get unevaluated expression when s:register ==# '='.
