@@ -127,7 +127,10 @@ function! s:ReplaceWithRegister( type )
   finally
     call setreg('"', l:save_reg, l:save_regmode)
     let &clipboard = l:save_clipboard
-    normal =`]
+    if &filetype != '' && l:newLineNum <= 100
+      let &undolevels = &undolevels
+      normal =`]
+    endif
   endtry
 endfunction
 function! ReplaceWithRegister#Operator( type, ... )
